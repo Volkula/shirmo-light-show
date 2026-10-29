@@ -4,7 +4,7 @@
   let timer = 0;
   let playingId = "";
   let stepIndex = 0;
-  let live = { color: [255, 176, 96], bright: 80 };
+  let live = { color: [255, 176, 96], bright: 30 };
   let statusText = "";
   let saveTimer = 0;
   let watch = 0;
@@ -417,9 +417,9 @@
         name: "Цикл",
         loop: true,
         steps: [
-          { color: "#e07030", seconds: 4, bright: 90, ease: "smooth" },
-          { color: "#ffd27a", seconds: 1, bright: 100, ease: "sharp" },
-          { color: "#6a2418", seconds: 4, bright: 25, ease: "smooth" }
+          { color: "#e07030", seconds: 4, bright: 30, ease: "smooth" },
+          { color: "#ffd27a", seconds: 1, bright: 30, ease: "sharp" },
+          { color: "#6a2418", seconds: 4, bright: 30, ease: "smooth" }
         ]
       };
       data.presets.push(preset);
@@ -577,7 +577,7 @@
         preset.steps.push({
           color: prev ? prev.color : "#ffffff",
           seconds: 2,
-          bright: prev ? prev.bright : 80,
+          bright: prev ? prev.bright : 30,
           ease: "smooth"
         });
         persist();
