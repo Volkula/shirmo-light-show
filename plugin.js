@@ -43,17 +43,143 @@
     });
   }
 
-  function holdAll() {
+  function catalog() {
+    const rows = [];
     devices().forEach(function (device) {
-      try { if (device.hold) device.hold(); } catch (err) {}
+      let targets = [];
+      try { targets = device.targets ? device.targets() : []; } catch (err) { targets = []; }
+      if (!targets.length) {
+        rows.push({ key: device.label || "Свет", device: device, lampId: null, label: device.label || "Свет" });
+        return;
+      }
+      targets.forEach(function (target) {
+        rows.push({
+          key: (device.label || "Свет") + ":" + target.id,
+          device: device,
+          lampId: target.id,
+          label: target.label || target.id
+        });
+      });
+    });
+    return rows;
+  }
+
+  function chosenKeys() {
+    const data = bag();
+    return Array.isArray(data.lampKeys) ? data.lampKeys : null;
+  }
+
+  function selectedRows() {
+    const rows = catalog();
+    const keys = chosenKeys();
+    if (!keys) return rows;
+    return rows.filter(function (row) { return keys.indexOf(row.key) >= 0; });
+  }
+
+  function lampWord(count) {
+    const mod10 = count % 10;
+    const mod100 = count % 100;
+    if (mod10 === 1 && mod100 !== 11) return count + " лампа";
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return count + " лампы";
+    return count + " ламп";
+  }
+
+  function lampSummary() {
+    const rows = catalog();
+    if (!rows.length) return "Нет ламп";
+    const keys = chosenKeys();
+    const pickedCount = !keys ? rows.length : rows.filter(function (row) { return keys.indexOf(row.key) >= 0; }).length;
+    if (!pickedCount) return "Лампы не выбраны";
+    if (pickedCount >= rows.length) return "Все лампы";
+    return lampWord(pickedCount);
+  }
+
+  function groupsOf(rows) {
+    const groups = [];
+    rows.forEach(function (row) {
+      let group = null;
+      groups.forEach(function (item) { if (item.device === row.device) group = item; });
+      if (!group) {
+        group = { device: row.device, ids: [], whole: false };
+        groups.push(group);
+      }
+      if (row.lampId == null) group.whole = true;
+      else group.ids.push(row.lampId);
+    });
+    return groups;
+  }
+
+  function holdAll() {
+    groupsOf(selectedRows()).forEach(function (group) {
+      try { if (group.device.hold) group.device.hold(group.whole ? null : group.ids); } catch (err) {}
     });
   }
 
   function paintDevices(color, bright, force) {
     live = { color: color.slice(), bright: bright };
-    readyDevices().forEach(function (device) {
-      try { device.frame(color, bright, force === true); } catch (err) {}
+    groupsOf(selectedRows()).forEach(function (group) {
+      try { group.device.frame(color, bright, force === true, group.whole ? null : group.ids); } catch (err) {}
     });
+  }
+
+  function closeLampPop() {
+    document.querySelectorAll(".light-pop").forEach(function (node) {
+      if (node._away) document.removeEventListener("pointerdown", node._away, true);
+      node.remove();
+    });
+  }
+
+  function openLampPop(anchor) {
+    closeLampPop();
+    const rows = catalog();
+    const pop = el("div", "light-pop");
+    pop.append(el("h3", "", "На каких лампах"));
+    if (!rows.length) pop.append(el("p", "note", "Нет ламп на связи."));
+    const keys = chosenKeys();
+    rows.forEach(function (row) {
+      const label = el("label", "light-check");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = !keys || keys.indexOf(row.key) >= 0;
+      box.addEventListener("change", function () {
+        const data = bag();
+        const next = catalog().filter(function (item) {
+          if (item.key === row.key) return box.checked;
+          const current = Array.isArray(data.lampKeys) ? data.lampKeys : null;
+          return !current || current.indexOf(item.key) >= 0;
+        }).map(function (item) { return item.key; });
+        data.lampKeys = next;
+        persist();
+        document.querySelectorAll("[data-light-lamps]").forEach(function (node) { node.textContent = lampSummary(); });
+      });
+      label.append(box, document.createTextNode(row.label));
+      pop.append(label);
+    });
+    const acts = el("div", "light-line");
+    const all = el("button", "", "Все");
+    all.type = "button";
+    all.addEventListener("click", function () {
+      bag().lampKeys = null;
+      persist();
+      openLampPop(anchor);
+    });
+    const done = el("button", "", "Готово");
+    done.type = "button";
+    done.addEventListener("click", closeLampPop);
+    acts.append(all, done);
+    pop.append(acts);
+    document.body.append(pop);
+    const rect = anchor.getBoundingClientRect();
+    pop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 280)) + "px";
+    pop.style.top = Math.min(rect.bottom + 6, window.innerHeight - 16) + "px";
+    setTimeout(function () {
+      function away(event) {
+        if (pop.contains(event.target) || anchor.contains(event.target)) return;
+        closeLampPop();
+      }
+      pop._away = away;
+      document.addEventListener("pointerdown", away, true);
+    }, 0);
   }
 
   function setStatus(text) {
@@ -124,7 +250,7 @@
   function playPreset(preset) {
     const steps = preset && preset.steps || [];
     if (!steps.length) { setStatus("В пресете нет шагов"); return; }
-    if (!readyDevices().length) { setStatus("Нет ламп на связи"); return; }
+    if (!selectedRows().length) { setStatus("Лампы не выбраны"); return; }
     stopRun();
     const mine = token;
     playingId = preset.id;
@@ -207,23 +333,35 @@
     root.append(head);
 
     const sync = el("section", "light-card");
-    sync.append(el("h3", "", "На все лампы"));
+    const headRow = el("div", "light-line");
+    headRow.append(el("h3", "", "Эффект"));
+    const lampsBtn = el("button", "", lampSummary());
+    lampsBtn.type = "button";
+    lampsBtn.setAttribute("data-light-lamps", "");
+    lampsBtn.title = "На каких лампах проявляется эффект";
+    lampsBtn.addEventListener("click", function () { openLampPop(lampsBtn); });
+    headRow.append(lampsBtn);
+    sync.append(headRow);
     const row = el("div", "light-line");
     const auto = el("button", "", "Авто");
     auto.type = "button";
-    auto.title = "Встроенный авторежим каждого подключённого плагина";
+    auto.title = "Встроенный авторежим выбранных ламп";
     auto.addEventListener("click", function () {
       stopRun();
-      const list = readyDevices();
-      if (!list.length) { setStatus("Нет ламп на связи"); return; }
-      list.forEach(function (device) { try { if (device.auto) device.auto(true); } catch (err) {} });
+      const groups = groupsOf(selectedRows());
+      if (!groups.length) { setStatus("Лампы не выбраны"); return; }
+      groups.forEach(function (group) {
+        try { if (group.device.auto) group.device.auto(true, group.whole ? null : group.ids); } catch (err) {}
+      });
       setStatus("Авто");
     });
     const stop = el("button", "", "Стоп");
     stop.type = "button";
     stop.addEventListener("click", function () {
       stopRun();
-      devices().forEach(function (device) { try { if (device.auto) device.auto(false); } catch (err) {} });
+      groupsOf(selectedRows()).forEach(function (group) {
+        try { if (group.device.auto) group.device.auto(false, group.whole ? null : group.ids); } catch (err) {}
+      });
       setStatus("Стоп");
     });
     row.append(auto, stop);
@@ -253,7 +391,7 @@
     const go = el("button", "", "Переход");
     go.type = "button";
     go.addEventListener("click", function () {
-      if (!readyDevices().length) { setStatus("Нет ламп на связи"); return; }
+      if (!selectedRows().length) { setStatus("Лампы не выбраны"); return; }
       stopRun();
       const mine = token;
       setStatus("Переход");
@@ -331,7 +469,7 @@
     presets.append(tools);
 
     if (!data.presets.length) {
-      presets.append(el("p", "note", "Новый цикл: к цвету за несколько секунд, яркость плавно или резко. Круг идёт по всем подключённым лампам."));
+      presets.append(el("p", "note", "Новый цикл: к цвету за несколько секунд, яркость плавно или резко. Круг идёт по лампам, отмеченным в окне эффекта."));
     }
 
     data.presets.forEach(function (preset) {
@@ -468,7 +606,9 @@
       ".light-check { display: flex; gap: 6px; align-items: center; }",
       ".light-preset { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); }",
       ".light-preset input[type='text'] { flex: 1; min-width: 120px; }",
-      ".light-status { margin: 0; min-height: 1.2em; color: var(--muted); }"
+      ".light-status { margin: 0; min-height: 1.2em; color: var(--muted); }",
+      ".light-pop { position: fixed; z-index: 60; display: grid; gap: 8px; width: 260px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 12px 40px rgba(0,0,0,.35); }",
+      ".light-pop h3 { margin: 0; }"
     ].join("\n");
     document.head.appendChild(style);
   }
