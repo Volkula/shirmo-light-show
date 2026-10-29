@@ -399,7 +399,7 @@
         if (mine === token) setStatus("Готово");
       });
     });
-    fade.append(color, seconds, el("span", "light-unit", "с"), bright, go);
+    fade.append(color, seconds, el("span", "light-unit", "с"), el("span", "light-unit", "Яркость"), bright, go);
     sync.append(fade);
     const status = el("p", "light-status", statusText);
     status.setAttribute("data-light-status", "");
@@ -566,7 +566,7 @@
           persist();
           draw(root);
         });
-        line.append(swatch, sec, el("span", "light-unit", "с"), level, ease, remove);
+        line.append(swatch, sec, el("span", "light-unit", "с"), el("span", "light-unit", "Яркость"), level, ease, remove);
         item.append(line);
       });
 
