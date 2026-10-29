@@ -1,0 +1,6 @@
+{
+  "id": "light-show",
+  "name": "Свет",
+  "version": "1.0.0",
+  "main": "plugin.js"
+}
